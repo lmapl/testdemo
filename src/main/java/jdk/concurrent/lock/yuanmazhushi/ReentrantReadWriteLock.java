@@ -542,7 +542,11 @@ public class ReentrantReadWriteLock
              * block if there is a waiting writer behind other enabled
              * readers that have not yet drained from the queue.
              */
-            return apparentlyFirstQueuedIsExclusive();
+
+            // TODO: 2019/10/15 以后改回来
+            //注意，需要改回第二行，这里是为了编辑通过，返回默认值，
+            return false;
+            //return apparentlyFirstQueuedIsExclusive();
         }
     }
 
