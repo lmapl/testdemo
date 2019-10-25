@@ -9,6 +9,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 public class ThreadPoolTest {
     public static void main(String[] args){
-        ThreadPoolExecutor threadPoolExecutor;
+        ThreadPoolExecutor threadPoolExecutor = null;
+        //threadPoolExecutor.execute();
     }
 }
