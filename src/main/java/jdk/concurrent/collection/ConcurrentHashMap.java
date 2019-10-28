@@ -257,6 +257,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /** 存储node节点的数组，在第一次使用时初始化，并在需要时自动扩容（2的幂数） */
     transient volatile Node<K,V>[] table;
 
+    // views
+    private transient KeySetView<K,V> keySet;
+    private transient ValuesView<K,V> values;
+    private transient EntrySetView<K,V> entrySet;
+
     /**
      * 下一个可以使用的数组；只在重新调整容量时不为空
      * The next table to use; non-null only while resizing.
@@ -295,30 +300,15 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      */
     private transient volatile CounterCell[] counterCells;
 
-    // views
-    private transient KeySetView<K,V> keySet;
-    private transient ValuesView<K,V> values;
-    private transient EntrySetView<K,V> entrySet;
+
 
 
     /* ---------------- Public operations -------------- */
 
-    /**
-     * Creates a new, empty map with the default initial table size (16).
-     */
-    public ConcurrentHashMap() {
-    }
+    /**   * 空map */
+    public ConcurrentHashMap() {  }
 
-    /**
-     * Creates a new, empty map with an initial table size
-     * accommodating the specified number of elements without the need
-     * to dynamically resize.
-     *
-     * @param initialCapacity The implementation performs internal
-     * sizing to accommodate this many elements.
-     * @throws IllegalArgumentException if the initial capacity of
-     * elements is negative
-     */
+    /** 空map，但是有数组长度*/
     public ConcurrentHashMap(int initialCapacity) {
         if (initialCapacity < 0)
             throw new IllegalArgumentException();
@@ -327,54 +317,16 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                    tableSizeFor(initialCapacity + (initialCapacity >>> 1) + 1));
         this.sizeCtl = cap;
     }
-
-    /**
-     * Creates a new map with the same mappings as the given map.
-     *
-     * @param m the map
-     */
+    /** 复制参数map */
     public ConcurrentHashMap(Map<? extends K, ? extends V> m) {
         this.sizeCtl = DEFAULT_CAPACITY;
         putAll(m);
     }
-
-    /**
-     * Creates a new, empty map with an initial table size based on
-     * the given number of elements ({@code initialCapacity}) and
-     * initial table density ({@code loadFactor}).
-     *
-     * @param initialCapacity the initial capacity. The implementation
-     * performs internal sizing to accommodate this many elements,
-     * given the specified load factor.
-     * @param loadFactor the load factor (table density) for
-     * establishing the initial table size
-     * @throws IllegalArgumentException if the initial capacity of
-     * elements is negative or the load factor is nonpositive
-     *
-     * @since 1.6
-     */
+    /** 空map，但是有数组长度，扩展倍数*/
     public ConcurrentHashMap(int initialCapacity, float loadFactor) {
         this(initialCapacity, loadFactor, 1);
     }
-
-    /**
-     * Creates a new, empty map with an initial table size based on
-     * the given number of elements ({@code initialCapacity}), table
-     * density ({@code loadFactor}), and number of concurrently
-     * updating threads ({@code concurrencyLevel}).
-     *
-     * @param initialCapacity the initial capacity. The implementation
-     * performs internal sizing to accommodate this many elements,
-     * given the specified load factor.
-     * @param loadFactor the load factor (table density) for
-     * establishing the initial table size
-     * @param concurrencyLevel the estimated number of concurrently
-     * updating threads. The implementation may use this value as
-     * a sizing hint.
-     * @throws IllegalArgumentException if the initial capacity is
-     * negative or the load factor or concurrencyLevel are
-     * nonpositive
-     */
+    /** 空map，但是有数组长度，扩展倍数*/
     public ConcurrentHashMap(int initialCapacity,
                              float loadFactor, int concurrencyLevel) {
         if (!(loadFactor > 0.0f) || initialCapacity < 0 || concurrencyLevel <= 0)
