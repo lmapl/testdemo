@@ -30,5 +30,7 @@ public class ListTest {
         }
 
         System.out.println(list.size());
+
+        ArrayList arrayList;
     }
 }

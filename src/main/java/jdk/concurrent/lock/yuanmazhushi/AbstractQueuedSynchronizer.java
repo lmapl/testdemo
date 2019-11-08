@@ -16,25 +16,42 @@ import java.util.concurrent.locks.LockSupport;
  * 这个类被设计成为为大多数依赖单个原子值来控制状态的同步器的基础
  * 子类必须实现方法改变原子值的状态。该状态用以代表被获取和被释放。
  * 其他注释请看原文。*/
-public abstract class AbstractQueuedSynchronizer
-    extends AbstractOwnableSynchronizer
-    implements java.io.Serializable {
+public abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer  implements java.io.Serializable {
 
     private static final long serialVersionUID = 7373984972572414691L;
-
-    /** 无参构造器，默认状态为0*/
-    protected AbstractQueuedSynchronizer() { }
-
     /** 等待队列的开始节点，如果开始节点存在，那么waitStatus 必然不可以是取消CANCELLED  */
     private transient volatile Node head;
-
     /** 等待队列的尾节点  */
     private transient volatile Node tail;
 
-    /**
-     * 同步状态，做什么用的呢？.
-     */
+    /** 同步状态，是控制是否可以获得锁的参数. */
     private volatile int state;
+
+    /** 支持CAS操作的位移偏移量 */
+    private static final Unsafe unsafe = Unsafe.getUnsafe();
+    private static final long stateOffset;  //state 在AbstractQueuedSynchronizer类实例 位移偏移量
+    private static final long headOffset;   //head 在AbstractQueuedSynchronizer类实例 位移偏移量
+    private static final long tailOffset;   //tail  在AbstractQueuedSynchronizer类实例 位移偏移量
+    private static final long waitStatusOffset;   //waitStatus 在Node类实例 位移偏移量
+    private static final long nextOffset;         //next 在Node类实例 位移偏移量
+    static {
+        try {
+            stateOffset = unsafe.objectFieldOffset
+                    (AbstractQueuedSynchronizer.class.getDeclaredField("state"));
+            headOffset = unsafe.objectFieldOffset
+                    (AbstractQueuedSynchronizer.class.getDeclaredField("head"));
+            tailOffset = unsafe.objectFieldOffset
+                    (AbstractQueuedSynchronizer.class.getDeclaredField("tail"));
+            waitStatusOffset = unsafe.objectFieldOffset
+                    (Node.class.getDeclaredField("waitStatus"));
+            nextOffset = unsafe.objectFieldOffset
+                    (Node.class.getDeclaredField("next"));
+        } catch (Exception ex) { throw new Error(ex); }
+    }
+
+
+    /** 无参构造器，默认状态为0*/
+    protected AbstractQueuedSynchronizer() { }
 
     /** 获取当前的同步状态 */
     protected final int getState() {
@@ -60,9 +77,7 @@ public abstract class AbstractQueuedSynchronizer
      */
     static final long spinForTimeoutThreshold = 1000L;
 
-    /**
-     * 插入节点到等待队列，返回前一个节点
-     */
+    /** 插入节点到等待队列，返回前一个节点   */
     private Node enq(final Node node) {
         for (;;) {
             Node t = tail;
@@ -84,13 +99,18 @@ public abstract class AbstractQueuedSynchronizer
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
         Node pred = tail;
+
+        //如果可以获得尾结点，直接尝试挂接到尾结点，作为新的尾结点
         if (pred != null) {
             node.prev = pred;
+            //cas操作，有可能会挂接失败。
             if (compareAndSetTail(pred, node)) {
                 pred.next = node;
                 return node;
             }
         }
+
+        //无法成功直接挂接到尾节点情况下的处理。循环尝试，知道挂接到尾节点。
         enq(node);
         return node;
     }
@@ -288,15 +308,19 @@ public abstract class AbstractQueuedSynchronizer
         try {
             boolean interrupted = false;
             for (;;) {
+                //获取上一个节点
                 final Node p = node.predecessor();
+                //判定node的上一个节点是否是等待队列头，如果是尝试获取锁
                 if (p == head && tryAcquire(arg)) {
+                    //获取锁成功，则将node节点设置为新的头节点，因为它的上一个节点已经执行完毕，并且释放锁了
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return interrupted;
                 }
-                if (shouldParkAfterFailedAcquire(p, node) &&
-                    parkAndCheckInterrupt())
+
+                // TODO: 2019/11/4 待研究
+                if (shouldParkAfterFailedAcquire(p, node) &&  parkAndCheckInterrupt())
                     interrupted = true;
             }
         } finally {
@@ -493,8 +517,10 @@ public abstract class AbstractQueuedSynchronizer
 
     /**获取独享锁   */
     public final void acquire(int arg) {
-        if (!tryAcquire(arg) &&
-            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+        //tryAcquire(arg) 回调子类方法，对status变量执行cas操作，判定是否可以获得锁
+        //addWaiter(null) 新增一个节点到等待队列（Node.EXCLUSIVE == null）
+        //acquireQueued(Node) 循环尝试为新增的节点获取锁，直到获取锁，或者中断
+        if (!tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
             selfInterrupt();
     }
 
@@ -832,27 +858,12 @@ public abstract class AbstractQueuedSynchronizer
         return condition.getWaitingThreads();
     }
 
-    /**
-     * Condition implementation for a {@link
-     * AbstractQueuedSynchronizer} serving as the basis of a {@link
-     *
-     * <p>Method documentation for this class describes mechanics,
-     * not behavioral specifications from the point of view of Lock
-     * and Condition users. Exported versions of this class will in
-     * general need to be accompanied by documentation describing
-     * condition semantics that rely on those of the associated
-     * {@code AbstractQueuedSynchronizer}.
-     *
-     * <p>This class is Serializable, but all fields are transient,
-     * so deserialized conditions have no waiters.
-     *
-     * 状态机？
-     */
+    /**  控制线程等待唤起的状态对象  */
     public class ConditionObject implements Condition, java.io.Serializable {
         private static final long serialVersionUID = 1173984872572414699L;
-        /** 状态队列，第一个等待者. */
+        /** 等待队列，第一个等待者. */
         private transient Node firstWaiter;
-        /** 状态队列，最后一个等待者 */
+        /** 等待队列，最后一个等待者 */
         private transient Node lastWaiter;
 
         /** 构造方法 */
@@ -875,7 +886,7 @@ public abstract class AbstractQueuedSynchronizer
             return node;
         }
 
-        /** 将Condition队列中的first节点插入到CLH队列中 */
+        /** 通知将Condition队列中的first节点插入到CLH队列中，代表这唤起阻塞 */
         private void doSignal(Node first) {
             do {
                 if ( (firstWaiter = first.nextWaiter) == null)
@@ -1147,29 +1158,7 @@ public abstract class AbstractQueuedSynchronizer
         }
     }
 
-    /** 支持CAS操作的位移偏移量 */
-    private static final Unsafe unsafe = Unsafe.getUnsafe();
-    private static final long stateOffset;
-    private static final long headOffset;
-    private static final long tailOffset;
-    private static final long waitStatusOffset;
-    private static final long nextOffset;
 
-    static {
-        try {
-            stateOffset = unsafe.objectFieldOffset
-                (AbstractQueuedSynchronizer.class.getDeclaredField("state"));
-            headOffset = unsafe.objectFieldOffset
-                (AbstractQueuedSynchronizer.class.getDeclaredField("head"));
-            tailOffset = unsafe.objectFieldOffset
-                (AbstractQueuedSynchronizer.class.getDeclaredField("tail"));
-            waitStatusOffset = unsafe.objectFieldOffset
-                (Node.class.getDeclaredField("waitStatus"));
-            nextOffset = unsafe.objectFieldOffset
-                (Node.class.getDeclaredField("next"));
-
-        } catch (Exception ex) { throw new Error(ex); }
-    }
 
     /** CAS操作设置头节点     */
     private final boolean compareAndSetHead(Node update) {
